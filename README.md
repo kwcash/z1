@@ -23,7 +23,11 @@ bash setup_vps.sh
 
 The script installs `python3-venv`, `sqlite3` and `curl` if missing (apt), builds the venv, loads the zip, starts the `z1-api` service and runs a smoke test. If the Fed zip has another name: `ZIP=/root/z1/FRB_Z1_csv.zip bash setup_vps.sh`.
 
-Re-running `setup_vps.sh` rebuilds the database from the zip (use it for each quarterly release).
+Re-running `setup_vps.sh` rebuilds the database from the zip.
+
+## Quarterly refresh
+
+Upload the new Fed zip, then `cd /root/z1 && bash update.sh /root/z1/<new_zip>`. It builds a scratch database, compares it with the live one, refuses to continue if the data shrank by more than 5% (override: `FORCE=1`), keeps the last 3 backups (`z1_master.db.bak-*`), swaps it in and restarts the service. Rollback: `systemctl stop z1-api; cp z1_master.db.bak-<timestamp> z1_master.db; systemctl start z1-api`.
 
 The API is not public. To browse it from your own machine, tunnel it:
 `ssh -L 8080:127.0.0.1:8000 root@<vps>` then open `http://127.0.0.1:8080/docs`.
