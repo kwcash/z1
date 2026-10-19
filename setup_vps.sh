@@ -40,9 +40,13 @@ systemctl --no-pager --lines=5 status z1-api || true
 echo "== 5/5 smoke test"
 curl -fsS --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:8000/api/health
 echo
-curl -fsS "http://127.0.0.1:8000/api/series/FL152090005.Q?start=2025:Q1" | head -c 600
-echo
-curl -fsS "http://127.0.0.1:8000/api/sector/15?prefix=FL" | head -c 300
-echo
+if [ -f api_keys.txt ]; then
+    echo "API keys are enabled (keys.sh); skipping the authenticated checks."
+else
+    curl -fsS "http://127.0.0.1:8000/api/series/FL152090005.Q?start=2025:Q1" | head -c 600
+    echo
+    curl -fsS "http://127.0.0.1:8000/api/sector/15?prefix=FL" | head -c 300
+    echo
+fi
 echo "Done. API listens on 127.0.0.1:8000 only (not public)."
 echo "From your own machine:  ssh -L 8080:127.0.0.1:8000 root@<vps>   then open http://127.0.0.1:8080/docs"
