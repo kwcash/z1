@@ -2,18 +2,59 @@
 
 Run:  uvicorn app:app --host 127.0.0.1 --port 8000
 """
+import hashlib
 import os
 import re
+import secrets
 import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Security
 from fastapi.responses import JSONResponse
+from fastapi.security import APIKeyHeader
 
 DB_PATH = Path(os.environ.get("Z1_DB", Path(__file__).parent / "z1_master.db"))
 SERIES_RE = re.compile(r"^[A-Z]{2}[A-Z0-9_]{1,20}\.[QA]$")
 SECTOR_RE = re.compile(r"^\d{2}$")
+
+# API keys: one "<name> <sha256 hex of key>" per line, managed by keys.sh.
+# No keys file = open API (fine while it listens on 127.0.0.1 only).
+# A keys file that holds no valid key refuses to start, so a bad edit can't silently open the API.
+KEYS_FILE = Path(os.environ.get("Z1_KEYS_FILE", Path(__file__).parent / "api_keys.txt"))
+key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+def load_key_hashes() -> list[str]:
+    if not KEYS_FILE.exists():
+        return []
+    hashes = []
+    for line in KEYS_FILE.read_text().splitlines():
+        parts = line.split()
+        if len(parts) == 2 and re.fullmatch(r"[0-9a-f]{64}", parts[1]):
+            hashes.append(parts[1])
+    if not hashes:
+        raise RuntimeError(f"{KEYS_FILE} exists but contains no valid keys; fix it or remove it")
+    return hashes
+
+
+KEY_HASHES = load_key_hashes()
+
+
+def require_key(key: str | None = Security(key_header)):
+    if not KEY_HASHES:
+        return
+    if key:
+        digest = hashlib.sha256(key.encode()).hexdigest()
+        ok = False
+        for h in KEY_HASHES:  # no early exit: same work for every attempt
+            ok |= secrets.compare_digest(digest, h)
+        if ok:
+            return
+    raise HTTPException(401, "missing or invalid API key", headers={"WWW-Authenticate": "ApiKey"})
+
+
+protected = [Depends(require_key)]
 
 app = FastAPI(title="Z.1 Financial Accounts API", version="0.1.0")
 
@@ -37,6 +78,7 @@ def health():
         return JSONResponse(status_code=503, content={"status": "error", "db": DB_PATH.name, "detail": str(e)})
     return {
         "status": "ok",
+        "auth": bool(KEY_HASHES),
         "db": DB_PATH.name,
         "total_series": n_series,
         "total_observations": n_obs,
@@ -44,7 +86,7 @@ def health():
     }
 
 
-@app.get("/api/series/{series_id}")
+@app.get("/api/series/{series_id}", dependencies=protected)
 def get_series(
     series_id: str,
     start: str | None = Query(None, description="first period, e.g. 2000:Q1"),
@@ -69,7 +111,7 @@ def get_series(
     return {"series": dict(meta), "observations": obs}
 
 
-@app.get("/api/sector/{sector_code}")
+@app.get("/api/sector/{sector_code}", dependencies=protected)
 def get_sector(
     sector_code: str,
     prefix: str | None = Query(None, description="FL, FA, FR, FU... to narrow the list"),
@@ -98,7 +140,7 @@ def get_sector(
     }
 
 
-@app.get("/api/search")
+@app.get("/api/search", dependencies=protected)
 def search(
     q: str = Query(..., min_length=2, description="words in the series description"),
     prefix: str | None = Query(None, description="FL, FA, FR, FU..."),
@@ -122,7 +164,7 @@ def search(
         return [dict(r) for r in c.execute(sql, args)]
 
 
-@app.get("/api/tables")
+@app.get("/api/tables", dependencies=protected)
 def tables():
     with closing(db()) as c:
         rows = c.execute(
@@ -132,7 +174,7 @@ def tables():
     return [dict(r) for r in rows]
 
 
-@app.get("/api/tables/{table_code}")
+@app.get("/api/tables/{table_code}", dependencies=protected)
 def table_series(table_code: str):
     with closing(db()) as c:
         rows = c.execute(

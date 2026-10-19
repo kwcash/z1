@@ -7,3 +7,4 @@ z1_new.db
 z1_new.db-shm
 z1_new.db-wal
 z1_master.db.bak-*
+api_keys.txt

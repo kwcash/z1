@@ -28,6 +28,28 @@ Re-running `setup_vps.sh` rebuilds the database from the zip.
 The API is not public. To browse it from your own machine, tunnel it:
 `ssh -L 8080:127.0.0.1:8000 root@<vps>` then open `http://127.0.0.1:8080/docs`.
 
+## API keys
+
+With no `api_keys.txt` the API is open (fine while it only listens on `127.0.0.1`). Before exposing it, create a key:
+
+```
+bash keys.sh add <name>      # prints the key once; stored hashed in api_keys.txt
+bash keys.sh list
+bash keys.sh revoke <name>   # the last key cannot be revoked
+```
+
+Callers send `X-API-Key: <key>`. `/api/health` stays open; every other `/api` route returns 401 without a valid key. A keys file with no valid key makes the app refuse to start, so a bad edit can't open the API. Keys are never in git (`api_keys.txt` is ignored).
+
+## Public HTTPS (optional)
+
+Needs a domain with an A record pointing at the VPS, and at least one API key:
+
+```
+DOMAIN=api.example.com EMAIL=you@example.com bash setup_nginx.sh
+```
+
+Installs nginx + certbot, proxies to the private API, rate-limits (10 req/s per IP) and gets a Let's Encrypt certificate that renews automatically.
+
 ## Quarterly refresh
 
 Upload the new Fed zip, then `cd /root/z1 && bash update.sh /root/z1/<new_zip>`. It builds a scratch database, compares it with the live one, refuses to continue if the data shrank by more than 5% (override: `FORCE=1`), keeps the last 3 backups (`z1_master.db.bak-*`), swaps it in and restarts the service. Rollback: `systemctl stop z1-api; cp z1_master.db.bak-<timestamp> z1_master.db; systemctl start z1-api`.
