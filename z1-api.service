@@ -1,0 +1,14 @@
+[Unit]
+Description=Z.1 Financial Accounts API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/z1
+Environment=Z1_DB=/root/z1/z1_master.db
+ExecStart=/root/z1/venv/bin/uvicorn app:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
