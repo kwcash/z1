@@ -8,25 +8,41 @@ cd /root/z1
 ZIP="${ZIP:-/root/z1/z1_csv_files.zip}"
 [ -f "$ZIP" ] || { echo "Missing $ZIP"; exit 1; }
 
-echo "== 1/4 virtual environment"
-[ -d venv ] || python3 -m venv venv
+echo "== 1/5 system packages (python3-venv, sqlite3, curl)"
+if command -v apt-get >/dev/null; then
+    need=()
+    python3 -c "import venv, ensurepip" 2>/dev/null || need+=(python3-venv)
+    command -v sqlite3 >/dev/null || need+=(sqlite3)
+    command -v curl >/dev/null || need+=(curl)
+    if [ "${#need[@]}" -gt 0 ]; then
+        echo "installing: ${need[*]}"
+        apt-get update -qq
+        apt-get install -y -qq "${need[@]}"
+    fi
+fi
+
+echo "== 2/5 virtual environment"
+[ -x venv/bin/pip ] || python3 -m venv --clear venv
 ./venv/bin/pip install --quiet --upgrade pip
 ./venv/bin/pip install --quiet fastapi "uvicorn[standard]"
 
-echo "== 2/4 load data (rebuilds z1_master.db)"
+echo "== 3/5 load data (rebuilds z1_master.db)"
 rm -f z1_master.db z1_master.db-wal z1_master.db-shm
 ./venv/bin/python ingest.py --zip "$ZIP" --db z1_master.db
 
-echo "== 3/4 install and start the service"
+echo "== 4/5 install and start the service"
 cp z1-api.service /etc/systemd/system/z1-api.service
 systemctl daemon-reload
-systemctl enable --now z1-api
-sleep 2
+systemctl enable z1-api
+systemctl restart z1-api
 systemctl --no-pager --lines=5 status z1-api || true
 
-echo "== 4/4 smoke test"
-curl -fsS http://127.0.0.1:8000/api/health
+echo "== 5/5 smoke test"
+curl -fsS --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:8000/api/health
 echo
 curl -fsS "http://127.0.0.1:8000/api/series/FL152090005.Q?start=2025:Q1" | head -c 600
 echo
+curl -fsS "http://127.0.0.1:8000/api/sector/15?prefix=FL" | head -c 300
+echo
 echo "Done. API listens on 127.0.0.1:8000 only (not public)."
+echo "From your own machine:  ssh -L 8080:127.0.0.1:8000 root@<vps>   then open http://127.0.0.1:8080/docs"
