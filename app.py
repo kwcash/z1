@@ -9,9 +9,11 @@ from contextlib import closing
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import JSONResponse
 
 DB_PATH = Path(os.environ.get("Z1_DB", Path(__file__).parent / "z1_master.db"))
 SERIES_RE = re.compile(r"^[A-Z]{2}[A-Z0-9_]{1,20}\.[QA]$")
+SECTOR_RE = re.compile(r"^\d{2}$")
 
 app = FastAPI(title="Z.1 Financial Accounts API", version="0.1.0")
 
@@ -25,9 +27,21 @@ def db() -> sqlite3.Connection:
 
 @app.get("/api/health")
 def health():
-    with closing(db()) as c:
-        rel = c.execute("SELECT * FROM release ORDER BY loaded_at DESC LIMIT 1").fetchone()
-    return {"status": "ok", "release": dict(rel) if rel else None}
+    try:
+        with closing(db()) as c:
+            # count the table itself: release.n_obs counts insert attempts, including replaced duplicates
+            n_obs = c.execute("SELECT count(*) FROM observation").fetchone()[0]
+            n_series = c.execute("SELECT count(*) FROM series").fetchone()[0]
+            rel = c.execute("SELECT * FROM release ORDER BY loaded_at DESC LIMIT 1").fetchone()
+    except sqlite3.Error as e:
+        return JSONResponse(status_code=503, content={"status": "error", "db": DB_PATH.name, "detail": str(e)})
+    return {
+        "status": "ok",
+        "db": DB_PATH.name,
+        "total_series": n_series,
+        "total_observations": n_obs,
+        "release": dict(rel) if rel else None,
+    }
 
 
 @app.get("/api/series/{series_id}")
@@ -53,6 +67,35 @@ def get_series(
         sql += " ORDER BY period"
         obs = [dict(r) for r in c.execute(sql, args)]
     return {"series": dict(meta), "observations": obs}
+
+
+@app.get("/api/sector/{sector_code}")
+def get_sector(
+    sector_code: str,
+    prefix: str | None = Query(None, description="FL, FA, FR, FU... to narrow the list"),
+):
+    if not SECTOR_RE.match(sector_code):
+        raise HTTPException(400, "sector code must be 2 digits, e.g. 15")
+    sql = (
+        "SELECT series_id, prefix, instrument, freq, description, unit "
+        "FROM series WHERE sector = ?"
+    )
+    args: list = [sector_code]
+    if prefix:
+        sql += " AND prefix = ?"
+        args.append(prefix.upper())
+    sql += " ORDER BY series_id"
+    with closing(db()) as c:
+        # name is null for codes not yet verified against the Fed dictionary (see schema.sql)
+        name = c.execute("SELECT name FROM sector WHERE code=?", (sector_code,)).fetchone()
+        series = [dict(r) for r in c.execute(sql, args)]
+    if not series:
+        raise HTTPException(404, "no series under this sector")
+    return {
+        "sector": {"code": sector_code, "name": name["name"] if name else None},
+        "count": len(series),
+        "series": series,
+    }
 
 
 @app.get("/api/search")
