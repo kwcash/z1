@@ -25,12 +25,12 @@ The script installs `python3-venv`, `sqlite3` and `curl` if missing (apt), build
 
 Re-running `setup_vps.sh` rebuilds the database from the zip.
 
+The API is not public. To browse it from your own machine, tunnel it:
+`ssh -L 8080:127.0.0.1:8000 root@<vps>` then open `http://127.0.0.1:8080/docs`.
+
 ## Quarterly refresh
 
 Upload the new Fed zip, then `cd /root/z1 && bash update.sh /root/z1/<new_zip>`. It builds a scratch database, compares it with the live one, refuses to continue if the data shrank by more than 5% (override: `FORCE=1`), keeps the last 3 backups (`z1_master.db.bak-*`), swaps it in and restarts the service. Rollback: `systemctl stop z1-api; cp z1_master.db.bak-<timestamp> z1_master.db; systemctl start z1-api`.
-
-The API is not public. To browse it from your own machine, tunnel it:
-`ssh -L 8080:127.0.0.1:8000 root@<vps>` then open `http://127.0.0.1:8080/docs`.
 
 ## API
 
