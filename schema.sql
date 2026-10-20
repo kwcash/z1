@@ -34,6 +34,16 @@ CREATE TABLE IF NOT EXISTS sector (
     name TEXT NOT NULL
 );
 
+-- Values that changed between releases (written by update.sh); the old value is kept here.
+CREATE TABLE IF NOT EXISTS revision (
+    release   TEXT NOT NULL,        -- release.loaded_at of the release that changed it
+    series_id TEXT NOT NULL,
+    period    TEXT NOT NULL,
+    old_value REAL,
+    new_value REAL
+);
+CREATE INDEX IF NOT EXISTS idx_revision_series ON revision(series_id, period);
+
 CREATE TABLE IF NOT EXISTS release (
     loaded_at TEXT PRIMARY KEY,
     source    TEXT,

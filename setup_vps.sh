@@ -26,9 +26,15 @@ echo "== 2/5 virtual environment"
 ./venv/bin/pip install --quiet --upgrade pip
 ./venv/bin/pip install --quiet fastapi "uvicorn[standard]"
 
-echo "== 3/5 load data (rebuilds z1_master.db)"
-rm -f z1_master.db z1_master.db-wal z1_master.db-shm
-./venv/bin/python ingest.py --zip "$ZIP" --db z1_master.db
+echo "== 3/5 load data (builds z1_new.db, then swaps it in)"
+rm -f z1_new.db z1_new.db-wal z1_new.db-shm
+./venv/bin/python ingest.py --zip "$ZIP" --db z1_new.db
+sqlite3 z1_new.db "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null
+[ "$(sqlite3 z1_new.db "PRAGMA integrity_check;")" = "ok" ] || { echo "integrity check failed; live database untouched"; exit 1; }
+systemctl stop z1-api 2>/dev/null || true
+rm -f z1_master.db-wal z1_master.db-shm
+mv z1_new.db z1_master.db
+mv -f z1_new.db.fingerprint z1_master.db.fingerprint
 
 echo "== 4/5 install and start the service"
 cp z1-api.service /etc/systemd/system/z1-api.service

@@ -17,6 +17,7 @@ from fastapi.security import APIKeyHeader
 DB_PATH = Path(os.environ.get("Z1_DB", Path(__file__).parent / "z1_master.db"))
 SERIES_RE = re.compile(r"^[A-Z]{2}[A-Z0-9_]{1,20}\.[QA]$")
 SECTOR_RE = re.compile(r"^\d{2}$")
+PERIOD_RE = re.compile(r"^\d{4}(:Q[1-4])?$")
 
 # API keys: one "<name> <sha256 hex of key>" per line, managed by keys.sh.
 # No keys file = open API (fine while it listens on 127.0.0.1 only).
@@ -98,14 +99,18 @@ def get_series(
         meta = c.execute("SELECT * FROM series WHERE series_id=?", (series_id,)).fetchone()
         if not meta:
             raise HTTPException(404, "series not found")
+        for label, v in (("start", start), ("end", end)):
+            if v and not PERIOD_RE.match(v):
+                raise HTTPException(400, f"{label} must look like 2000 or 2000:Q1")
+        annual = series_id.endswith(".A")
         sql = "SELECT period, value FROM observation WHERE series_id=?"
         args: list = [series_id]
-        if start:
+        if start:   # periods are strings: '2000' sorts before '2000:Q1', so compare on the series' own frequency
             sql += " AND period >= ?"
-            args.append(start)
+            args.append(start[:4] if annual else start)
         if end:
             sql += " AND period <= ?"
-            args.append(end)
+            args.append(end[:4] if annual else (end + ":Q4" if ":" not in end else end))
         sql += " ORDER BY period"
         obs = [dict(r) for r in c.execute(sql, args)]
     return {"series": dict(meta), "observations": obs}
@@ -150,8 +155,8 @@ def search(
     sql = "SELECT series_id, description, unit FROM series WHERE 1=1"
     args: list = []
     for word in q.split():
-        sql += " AND description LIKE ?"
-        args.append(f"%{word}%")
+        sql += " AND description LIKE ? ESCAPE '\\'"
+        args.append("%" + word.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
     if prefix:
         sql += " AND prefix = ?"
         args.append(prefix.upper())

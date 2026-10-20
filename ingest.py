@@ -66,7 +66,8 @@ def read_dictionary(zf: zipfile.ZipFile, stem: str):
 def load(zf: zipfile.ZipFile, conn: sqlite3.Connection, source: str) -> tuple[int, int, int]:
     csv_names = sorted(n for n in zf.namelist() if n.startswith("csv/") and n.lower().endswith(".csv"))
     seen_series: set[str] = set()
-    n_obs = 0
+    values: dict[tuple[str, str], float] = {}   # every (series, period) seen, to catch files that disagree
+    conflicts: list[str] = []
 
     with conn:
         for name in csv_names:
@@ -106,10 +107,20 @@ def load(zf: zipfile.ZipFile, conn: sqlite3.Connection, source: str) -> tuple[in
                 period = row[0].strip()
                 for sid, cell in zip(ids, row[1:]):
                     v = to_float(cell)
-                    if v is not None:
+                    if v is None:
+                        continue
+                    old = values.get((sid, period))
+                    if old is None:
+                        values[(sid, period)] = v
                         batch.append((sid, period, v))
-            conn.executemany("INSERT OR REPLACE INTO observation VALUES (?,?,?)", batch)
-            n_obs += len(batch)
+                    elif old != v:
+                        conflicts.append(f"{sid} {period}: {old} vs {v} (in {stem})")
+            conn.executemany("INSERT INTO observation VALUES (?,?,?)", batch)
+
+        if conflicts:
+            # raising inside `with conn` rolls everything back: nothing half-loaded is kept
+            raise SystemExit(f"ABORT: {len(conflicts)} cells disagree between CSV files, e.g.:\n  " + "\n  ".join(conflicts[:20]))
+        n_obs = len(values)
 
         n_series = conn.execute("SELECT count(*) FROM series").fetchone()[0]
         conn.execute(

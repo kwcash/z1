@@ -92,3 +92,10 @@ A shadow opens the Fed DB read-only, refuses to build if the fingerprint doesn't
 Transforms (`transforms.py`): `log_base(s, base)`, `ratio` (annual denominators match each quarter), `growth`, `rolling_sum`, `index_to`, `to_base(x, 60)` (positional digits, e.g. `5;21,41,0`), `ols_slope`.
 
 Per-capita etc.: drop a `period,value` CSV in `external/` and load it in a spec with `ctx.external(name, file, source)`. No outside numbers are bundled, since population and energy series should come from a source you choose and cite.
+
+## Data integrity and history
+
+- **Ingest aborts on disagreement.** If two CSV files give different values for the same series and period, `ingest.py` stops, lists the cells and keeps nothing. `release.n_obs` is the number of rows actually stored.
+- **Revisions are kept.** `update.sh` copies each new zip to `archive/` (permanent) and records every changed value in the `revision` table (`release, series_id, period, old_value, new_value`). Rolling `.bak-*` copies are still made.
+- **Rebuilds never happen in place.** `setup_vps.sh` and `update.sh` build `z1_new.db`, integrity-check it, then swap it in.
+- **Sector codes are the Fed's 2-digit codes** (`15`). The three-digit codes in the Guide (`153`, `154`) are sector + the instrument's first digit (asset/liability side), not sectors.

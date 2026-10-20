@@ -47,7 +47,17 @@ if [ "${FORCE:-0}" != 1 ] && { [ $((new_obs * 100)) -lt $((old_obs * 95)) ] || [
     exit 1
 fi
 
-echo "== 3/5 back up the live database"
+echo "== 3/5 archive the zip, record revisions, back up the live database"
+mkdir -p archive
+cp -n "$ZIP" "archive/z1-$(date +%Y%m%d-%H%M%S).zip"
+if [ -f "$DB" ]; then
+    has_rev=$(q "$DB" "SELECT count(*) FROM sqlite_master WHERE name='revision'")
+    q "$NEW" "ATTACH '$DB' AS old;
+      $( [ "$has_rev" = 1 ] && echo "INSERT INTO revision SELECT * FROM old.revision;" )
+      INSERT INTO revision SELECT (SELECT max(loaded_at) FROM release), n.series_id, n.period, o.value, n.value
+        FROM observation n JOIN old.observation o USING(series_id, period) WHERE o.value IS NOT n.value;"
+    echo "values revised by this release: $(q "$NEW" "SELECT count(*) FROM revision WHERE release=(SELECT max(loaded_at) FROM release)")"
+fi
 if [ -f "$DB" ]; then
     bak="$DB.bak-$(date +%Y%m%d-%H%M%S)"
     q "$DB" ".backup '$bak'"

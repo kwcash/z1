@@ -11,3 +11,4 @@ api_keys.txt
 shadow_*.db
 shadow_*.db.tmp
 z1_master.db.fingerprint
+archive/
