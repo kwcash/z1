@@ -18,6 +18,8 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+import z1lib
+
 MNEMONIC = re.compile(r"^(?P<prefix>[A-Z]{2})(?P<sector>\d{2})(?P<instrument>\d{5})(?P<suffix>\d{2})\.(?P<freq>[QA])$")
 MISSING = {"", "ND", "NA", "NC", "NM"}
 LINE = re.compile(r"(\d+)")
@@ -128,6 +130,7 @@ def main() -> int:
     with zipfile.ZipFile(a.zip) as zf:
         n_series, n_obs, n_files = load(zf, conn, a.zip.name)
     n_db_obs = conn.execute("SELECT count(*) FROM observation").fetchone()[0]
+    z1lib.fingerprint_file(a.db).write_text(z1lib.fingerprint(conn) + "\n")
     print(f"Read {n_files} CSV files: {n_series} unique series, {n_db_obs} unique observations in {a.db}")
     return 0
 

@@ -17,7 +17,7 @@ KEEP=3   # backups to keep
 unzip -tq "$ZIP" >/dev/null || { echo "$ZIP is not a valid zip"; exit 1; }
 
 q() { sqlite3 "$1" "$2"; }
-cleanup_new() { rm -f "$NEW" "$NEW-wal" "$NEW-shm"; }
+cleanup_new() { rm -f "$NEW" "$NEW-wal" "$NEW-shm" "$NEW.fingerprint"; }
 
 echo "== 1/5 build $NEW from $ZIP"
 cleanup_new
@@ -61,6 +61,7 @@ echo "== 4/5 swap in the new database and restart"
 systemctl stop z1-api
 rm -f "$DB-wal" "$DB-shm"   # a stale WAL from the old file must never meet the new one
 mv "$NEW" "$DB"
+mv -f "$NEW.fingerprint" "$DB.fingerprint"   # keep the seal matched to the data
 systemctl start z1-api
 
 echo "== 5/5 smoke test"

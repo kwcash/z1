@@ -74,3 +74,21 @@ Prefixes in this release: FU, FA, FL, LM, FR, FV, FC, LA.
 On the Fed zip from this project: 307 files, 8,234 series, about 1.96M unique observations, 68 MB database, 13 s load.
 Household net worth 2026:Q2 = 195,870,496 (millions).
 Sector codes in `schema.sql` are limited to ones verified in the dictionary; the rest can be added from the series descriptions.
+
+## Fed data vs. shadow databases
+
+`z1_master.db` is the clean copy of the Fed data and nothing else. Only `ingest.py` / `update.sh` write it; it records a content fingerprint (`z1_master.db.fingerprint`) so any change is detectable (`python shadow.py verify`).
+
+Anything derived (per-capita, per-energy, ratios, logs in base e / 60 / any base, experiments) lives in a separate **shadow database** `shadow_<name>.db`, built by a spec in `shadows/<name>.py`:
+
+```
+python shadow.py list
+python shadow.py build financialization
+sqlite3 shadow_financialization.db "select * from experiment_result"
+```
+
+A shadow opens the Fed DB read-only, refuses to build if the fingerprint doesn't match, and stores that fingerprint in its `provenance` table, so every result says exactly which Fed data it came from. Tables: `derived_series` (formula + inputs for every metric), `derived_obs`, `external_input` (denominators you supply with a stated source), `experiment`, `experiment_result`.
+
+Transforms (`transforms.py`): `log_base(s, base)`, `ratio` (annual denominators match each quarter), `growth`, `rolling_sum`, `index_to`, `to_base(x, 60)` (positional digits, e.g. `5;21,41,0`), `ols_slope`.
+
+Per-capita etc.: drop a `period,value` CSV in `external/` and load it in a spec with `ctx.external(name, file, source)`. No outside numbers are bundled, since population and energy series should come from a source you choose and cite.
