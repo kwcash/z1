@@ -99,3 +99,30 @@ Per-capita etc.: drop a `period,value` CSV in `external/` and load it in a spec 
 - **Revisions are kept.** `update.sh` copies each new zip to `archive/` (permanent) and records every changed value in the `revision` table (`release, series_id, period, old_value, new_value`). Rolling `.bak-*` copies are still made.
 - **Rebuilds never happen in place.** `setup_vps.sh` and `update.sh` build `z1_new.db`, integrity-check it, then swap it in.
 - **Sector codes are the Fed's 2-digit codes** (`15`). The three-digit codes in the Guide (`153`, `154`) are sector + the instrument's first digit (asset/liability side), not sectors.
+
+## API reference (all under `/api`, all but `health` need `X-API-Key`)
+
+| Route | What it does |
+|---|---|
+| `GET /series/{id}?start&end&asof&format` | observations. `asof=2026-07-15` gives the values as published at that release; `format=csv` downloads CSV |
+| `GET /series/{id}/transform?kind=...` | `ln`, `log` (`log_base=60`), `yoy` (% vs a year ago), `pct` (`lag=n`), `logdiff`, `index` (`index_base=2000:Q1` = 100). The full history is transformed first, then clipped to `start`/`end` |
+| `GET /compare?ids=A,B,C&kind=...` | up to 10 series (same frequency) aligned by period; accepts the same `kind`/`start`/`end`/`asof`/`format` |
+| `GET /series/{id}/revisions` | every release in which a value changed (`old_value` null = newly published, `new_value` null = dropped) |
+| `GET /releases` | releases held in this database (use a date as `asof`) |
+| `GET /sector/{code}`, `/search`, `/tables`, `/tables/{code}` | browsing (search escapes `%` and `_`) |
+
+`asof` and `revisions` return 409 until the first `update.sh` run creates history.
+
+## Quarterly update (when the Fed publishes a new Z.1)
+
+```
+scp new_z1.zip root@<vps>:/root/z1/        # from the Fed's "Z.1 CSV files" download
+ssh root@<vps>
+cd /root/z1 && bash update.sh /root/z1/new_z1.zip
+```
+
+`update.sh` explains itself at the top of the file: it builds and checks a new database first, stops if anything looks wrong, archives the zip, records revisions, swaps the new database in, restarts the API and rebuilds the shadow databases. Rollback instructions are in its header.
+
+## Guide corrections
+
+`GUIDE_FIX.md` lists every sector/instrument-code edit needed in `Z1_Guide_EDITED.docx`; `python guide_appendix.py` regenerates the corrected Appendix B and C tables from the database.

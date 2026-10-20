@@ -71,3 +71,9 @@ def rolling_sum(s: dict, n: int = 4) -> dict:
     """Sum of the last n observations (4 turns a quarterly flow into a trailing-year flow)."""
     ps = sorted(s)
     return {ps[i]: sum(s[q] for q in ps[i - n + 1:i + 1]) for i in range(n - 1, len(ps))}
+
+
+def pct_change(s: dict, lag: int = 1) -> dict:
+    """Percent change over `lag` observations (4 on quarterly data = year-on-year)."""
+    ps = sorted(s)
+    return {ps[i]: (s[ps[i]] / s[ps[i - lag]] - 1) * 100 for i in range(lag, len(ps)) if s[ps[i - lag]]}
